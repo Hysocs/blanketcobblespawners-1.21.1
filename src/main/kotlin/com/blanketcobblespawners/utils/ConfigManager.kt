@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
 data class GlobalConfig(
-    var version: String = "1.0.3",
+    var version: String = "1.0.4",
     var debugEnabled: Boolean = false,
     var cullSpawnerPokemonOnServerStop: Boolean = true,
     var showUnimplementedPokemonInGui: Boolean = false,
@@ -158,7 +158,7 @@ object ConfigManager {
     }
 
     private fun loadGlobalSpawnerData() {
-        val currentVersion = "1.0.3"
+        val currentVersion = "1.0.4"
 
         if (!Files.exists(configFile)) {
             createDefaultConfigData()
@@ -224,7 +224,7 @@ object ConfigManager {
     }
 
     private fun migrateConfig(oldConfigJson: JsonObject): JsonObject {
-        val currentVersion = "1.0.3"
+        val currentVersion = "1.0.4"
         val migratedConfig = gson.toJsonTree(ConfigData()).asJsonObject
 
         val oldGlobalConfig = oldConfigJson.getAsJsonObject("globalConfig")
