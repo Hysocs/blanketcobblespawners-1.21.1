@@ -293,7 +293,7 @@ object BlanketCobbleSpawners : ModInitializer {
 			return
 		}
 
-		val validPositions = spawnerValidPositions.getOrPut(spawnerData.spawnerPos) {
+		val allValidPositions = spawnerValidPositions.getOrPut(spawnerData.spawnerPos) {
 			val positions = computeValidSpawnPositions(serverWorld, spawnerData)
 			positions.ifEmpty {
 				val retryPositions = computeValidSpawnPositions(serverWorld, spawnerData)
@@ -304,13 +304,13 @@ object BlanketCobbleSpawners : ModInitializer {
 			}
 		}
 
-		if (validPositions.isEmpty()) {
+		if (allValidPositions.isEmpty()) {
 			logDebug("No suitable spawn position found for spawner at ${spawnerData.spawnerPos}. Skipping spawn.")
 			return
 		}
 
 		val eligiblePokemon = spawnerData.selectedPokemon.filter { entry ->
-			val condition = checkIndividualSpawnConditions(serverWorld, entry)
+			val condition = checkBasicSpawnConditions(serverWorld, entry)
 			if (condition != null) {
 				logDebug("Spawn conditions not met for Pokémon '${entry.pokemonName}' at spawner '${spawnerData.spawnerName}': $condition. Skipping spawn.")
 				false
@@ -344,17 +344,10 @@ object BlanketCobbleSpawners : ModInitializer {
 		var spawnedCount = 0
 
 		while (spawnedCount < spawnAmount && totalAttempts < spawnAmount * maxAttemptsPerSpawn) {
-			val index = random.nextInt(validPositions.size)
-			val spawnPos = validPositions[index]
-			if (!serverWorld.isChunkLoaded(spawnPos)) {
-				logDebug("Chunk not loaded at spawn position $spawnPos. Skipping spawn.")
-				totalAttempts++
-				continue
-			}
-
 			val randomValue = random.nextDouble() * totalWeight
 			var cumulativeWeight = 0.0
 			var selectedPokemon: PokemonSpawnEntry? = null
+
 			for (pokemonEntry in eligiblePokemon) {
 				cumulativeWeight += pokemonEntry.spawnChance
 				if (randomValue <= cumulativeWeight) {
@@ -369,14 +362,38 @@ object BlanketCobbleSpawners : ModInitializer {
 				continue
 			}
 
+			// Filter valid positions based on spawn location
+			val validPositions = filterSpawnPositionsByLocation(
+				serverWorld,
+				allValidPositions,
+				selectedPokemon.spawnSettings.spawnLocation
+			)
+
+			if (validPositions.isEmpty()) {
+				logDebug("No valid positions found for spawn location type ${selectedPokemon.spawnSettings.spawnLocation}")
+				totalAttempts++
+				continue
+			}
+
+			val index = random.nextInt(validPositions.size)
+			val spawnPos = validPositions[index]
+
+			if (!serverWorld.isChunkLoaded(spawnPos)) {
+				logDebug("Chunk not loaded at spawn position $spawnPos. Skipping spawn.")
+				totalAttempts++
+				continue
+			}
+
 			val entry = selectedPokemon
 			val sanitizedPokemonName = entry.pokemonName.replace(Regex("[^a-zA-Z0-9]"), "").lowercase()
 			val species = PokemonSpecies.getByName(sanitizedPokemonName)
+
 			if (species == null) {
 				logger.warn("Species '$sanitizedPokemonName' not found for spawner at ${spawnerData.spawnerPos}")
 				totalAttempts++
 				continue
 			}
+
 			val level = entry.minLevel + random.nextInt(entry.maxLevel - entry.minLevel + 1)
 			val isShiny = random.nextDouble() * 100 <= entry.shinyChance
 
@@ -385,6 +402,7 @@ object BlanketCobbleSpawners : ModInitializer {
 			if (isShiny) {
 				propertiesStringBuilder.append(" shiny=true")
 			}
+
 			if (!entry.formName.isNullOrEmpty() && !entry.formName.equals("normal", ignoreCase = true) && !entry.formName.equals("default", ignoreCase = true)) {
 				val normalizedEntryFormName = entry.formName!!.lowercase().replace(Regex("[^a-z0-9]"), "")
 				val availableForms = species.forms
@@ -410,8 +428,6 @@ object BlanketCobbleSpawners : ModInitializer {
 			val pokemonEntity = properties.createEntity(serverWorld)
 			val pokemon = pokemonEntity.pokemon
 
-			// Set sizes, IVs, items, etc. as per your original logic...
-
 			pokemonEntity.refreshPositionAndAngles(
 				spawnPos.x + 0.5,
 				spawnPos.y.toDouble(),
@@ -419,6 +435,7 @@ object BlanketCobbleSpawners : ModInitializer {
 				pokemonEntity.yaw,
 				pokemonEntity.pitch
 			)
+
 			if (serverWorld.spawnEntity(pokemonEntity)) {
 				SpawnerUUIDManager.addPokemon(pokemonEntity.uuid, spawnerData.spawnerPos, entry.pokemonName)
 				logDebug("Pokémon '${species.name}' spawned with UUID ${pokemonEntity.uuid}")
@@ -428,6 +445,7 @@ object BlanketCobbleSpawners : ModInitializer {
 			}
 			totalAttempts++
 		}
+
 		if (spawnedCount > 0) {
 			logDebug("Spawned $spawnedCount Pokémon(s) for spawner at ${spawnerData.spawnerPos}")
 		} else {
@@ -435,9 +453,47 @@ object BlanketCobbleSpawners : ModInitializer {
 		}
 	}
 
-	private fun checkIndividualSpawnConditions(world: ServerWorld, entry: PokemonSpawnEntry): String? {
-		// Check time, weather, etc. as in original logic...
-		return null
+	private fun checkBasicSpawnConditions(world: ServerWorld, entry: PokemonSpawnEntry): String? {
+		// Time check
+		when (entry.spawnSettings.spawnTime.uppercase()) {
+			"DAY" -> {
+				val timeOfDay = world.timeOfDay % 24000
+				if (timeOfDay < 0 || timeOfDay > 12000) {
+					return "Not daytime"
+				}
+			}
+			"NIGHT" -> {
+				val timeOfDay = world.timeOfDay % 24000
+				if (timeOfDay >= 0 && timeOfDay <= 12000) {
+					return "Not nighttime"
+				}
+			}
+			"ALL" -> {} // No time restriction
+			else -> logger.warn("Invalid spawn time ${entry.spawnSettings.spawnTime} for ${entry.pokemonName}")
+		}
+
+		// Weather check
+		when (entry.spawnSettings.spawnWeather.uppercase()) {
+			"CLEAR" -> {
+				if (world.isRaining) {
+					return "Not clear weather"
+				}
+			}
+			"RAIN" -> {
+				if (!world.isRaining || world.isThundering) {
+					return "Not raining"
+				}
+			}
+			"THUNDER" -> {
+				if (!world.isThundering) {
+					return "Not thundering"
+				}
+			}
+			"ALL" -> {} // No weather restriction
+			else -> logger.warn("Invalid weather condition ${entry.spawnSettings.spawnWeather} for ${entry.pokemonName}")
+		}
+
+		return null // All conditions met
 	}
 
 	fun computeValidSpawnPositions(serverWorld: ServerWorld, spawnerData: SpawnerData): List<BlockPos> {
@@ -458,6 +514,25 @@ object BlanketCobbleSpawners : ModInitializer {
 		return validPositions
 	}
 
+	private fun filterSpawnPositionsByLocation(world: ServerWorld, positions: List<BlockPos>, spawnLocation: String): List<BlockPos> {
+		return when (spawnLocation.uppercase()) {
+			"SURFACE" -> positions.filter { hasDirectSkyAccess(world, it) }
+			"UNDERGROUND" -> positions.filter { !hasDirectSkyAccess(world, it) }
+			else -> positions // "ALL" case - no filtering needed
+		}
+	}
+	private fun hasDirectSkyAccess(world: ServerWorld, pos: BlockPos): Boolean {
+		var currentPos = pos.up()
+		while (currentPos.y < world.topY) {
+			val state = world.getBlockState(currentPos)
+			// Skip if the block is leaves
+			if (!state.isAir && !state.block.toString().lowercase().contains("leaves")) {
+				return false
+			}
+			currentPos = currentPos.up()
+		}
+		return true
+	}
 	private fun isPositionSafeForSpawn(world: World, spawnPos: BlockPos): Boolean {
 		val blockBelowPos = spawnPos.down()
 		val blockBelowState = world.getBlockState(blockBelowPos)

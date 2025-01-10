@@ -193,14 +193,14 @@ object SpawnerSettingsGui {
                     spawnerData.spawnRadius.width = if (clickType == ClickType.LEFT) {
                         (spawnerData.spawnRadius.width - 1).coerceAtLeast(1)
                     } else {
-                        (spawnerData.spawnRadius.width + 1).coerceAtMost(20)
+                        (spawnerData.spawnRadius.width + 1).coerceAtMost(20000)
                     }
                 }
                 "Spawn Height" -> {
                     spawnerData.spawnRadius.height = if (clickType == ClickType.LEFT) {
                         (spawnerData.spawnRadius.height - 1).coerceAtLeast(1)
                     } else {
-                        (spawnerData.spawnRadius.height + 1).coerceAtMost(20)
+                        (spawnerData.spawnRadius.height + 1).coerceAtMost(20000)
                     }
                 }
                 "Spawn Limit" -> {
@@ -214,7 +214,7 @@ object SpawnerSettingsGui {
                     spawnerData.spawnAmountPerSpawn = if (clickType == ClickType.LEFT) {
                         (spawnerData.spawnAmountPerSpawn - 1).coerceAtLeast(1)
                     } else {
-                        (spawnerData.spawnAmountPerSpawn + 1).coerceAtMost(10) // Set maximum as needed
+                        (spawnerData.spawnAmountPerSpawn + 1).coerceAtMost(100000)
                     }
                 }
             }

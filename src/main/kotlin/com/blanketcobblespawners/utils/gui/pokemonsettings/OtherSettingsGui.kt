@@ -45,8 +45,17 @@ object OtherSettingsGui {
                         context.slotIndex
                     )
                 }
-                Items.SUNFLOWER -> { // New item for weather toggle
+                Items.SUNFLOWER -> {
                     toggleSpawnWeather(
+                        spawnerPos,
+                        pokemonName,
+                        formName,
+                        player,
+                        context.slotIndex
+                    )
+                }
+                Items.LADDER -> {
+                    toggleSpawnLocation(
                         spawnerPos,
                         pokemonName,
                         formName,
@@ -96,9 +105,12 @@ object OtherSettingsGui {
         // New button for spawn weather toggle
         layout[20] = createSpawnWeatherToggleButton(selectedEntry.spawnSettings.spawnWeather)
 
+        // Button for spawn location toggle
+        layout[31] = createSpawnLocationToggleButton(selectedEntry.spawnSettings.spawnLocation)
+
         // Fill the rest with gray stained glass panes except for the toggle buttons and back button
         for (i in 0 until 54) {
-            if (i !in listOf(20, 24, 49)) {
+            if (i !in listOf(20, 24, 31, 49)) {
                 layout[i] = ItemStack(Items.GRAY_STAINED_GLASS_PANE).apply {
                     setCustomName(Text.literal(" "))
                 }
@@ -114,18 +126,18 @@ object OtherSettingsGui {
         return layout
     }
 
-    /**
-     * Creates a toggle button for isCatchable.
-     */
-    private fun createIsCatchableToggleButton(isCatchable: Boolean): ItemStack {
-        val toggleName = if (isCatchable) "Set Catchable: ON" else "Set Catchable: OFF"
+    private fun createSpawnLocationToggleButton(spawnLocation: String): ItemStack {
+        val displayName = when (spawnLocation) {
+            "SURFACE" -> "Spawn Location: SURFACE"
+            "UNDERGROUND" -> "Spawn Location: UNDERGROUND"
+            else -> "Spawn Location: ALL"
+        }
 
-        return ItemStack(Items.LEVER).apply {
-            setCustomName(Text.literal(toggleName))
-            CustomGui.setItemLore(this, listOf("§eClick to toggle"))
+        return ItemStack(Items.LADDER).apply {
+            setCustomName(Text.literal(displayName))
+            CustomGui.setItemLore(this, listOf("§eClick to toggle spawn location"))
         }
     }
-
     /**
      * Creates a toggle button for spawnTime.
      */
@@ -159,43 +171,44 @@ object OtherSettingsGui {
         }
     }
 
-    /**
-     * Toggles the isCatchable property of the selectedEntry.
-     */
-    private fun toggleIsCatchable(
+    private fun toggleSpawnLocation(
         spawnerPos: BlockPos,
         pokemonName: String,
         formName: String?,
         player: ServerPlayerEntity,
-        leverSlot: Int
+        locationSlot: Int
     ) {
         ConfigManager.updatePokemonSpawnEntry(spawnerPos, pokemonName, formName) { selectedEntry ->
-            selectedEntry.captureSettings.isCatchable = !selectedEntry.captureSettings.isCatchable
+            selectedEntry.spawnSettings.spawnLocation = when (selectedEntry.spawnSettings.spawnLocation) {
+                "SURFACE" -> "UNDERGROUND"
+                "UNDERGROUND" -> "ALL"
+                else -> "SURFACE"
+            }
         } ?: run {
-            player.sendMessage(Text.literal("Failed to toggle isCatchable."), false)
+            player.sendMessage(Text.literal("Failed to toggle spawn location."), false)
             return
         }
 
-        // Update the lever item to reflect the new value (ON/OFF)
+        // Update the location item to reflect the new spawn location
         val updatedEntry = ConfigManager.getPokemonSpawnEntry(spawnerPos, pokemonName, formName)
         if (updatedEntry != null) {
-            val leverItem = createIsCatchableToggleButton(updatedEntry.captureSettings.isCatchable)
+            val locationItem = createSpawnLocationToggleButton(updatedEntry.spawnSettings.spawnLocation)
 
-            // Update the GUI with the new lever without closing
+            // Update the GUI with the new location item without closing
             val screenHandler = player.currentScreenHandler
-            if (leverSlot < screenHandler.slots.size) {
-                screenHandler.slots[leverSlot].stack = leverItem
+            if (locationSlot < screenHandler.slots.size) {
+                screenHandler.slots[locationSlot].stack = locationItem
             }
 
             screenHandler.sendContentUpdates()
 
             logger.info(
-                "Toggled isCatchable for $pokemonName (${updatedEntry.formName ?: "Standard"}) at spawner $spawnerPos."
+                "Toggled spawn location for $pokemonName (${updatedEntry.formName ?: "Standard"}) at spawner $spawnerPos to ${updatedEntry.spawnSettings.spawnLocation}."
             )
 
             // Notify the player
             player.sendMessage(
-                Text.literal("Set Catchable to ${if (updatedEntry.captureSettings.isCatchable) "ON" else "OFF"} for $pokemonName."),
+                Text.literal("Set spawn location to ${updatedEntry.spawnSettings.spawnLocation} for $pokemonName."),
                 false
             )
         }
