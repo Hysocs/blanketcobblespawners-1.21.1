@@ -8,7 +8,10 @@ import com.blanketcobblespawners.utils.ParticleUtils.visualizationInterval
 import com.blanketcobblespawners.utils.ParticleUtils.visualizeSpawnerPositions
 import com.blanketcobblespawners.utils.gui.SpawnerPokemonSelectionGui
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.api.pokemon.stats.Stats
 import com.cobblemon.mod.common.entity.pokemon.PokemonEntity
+import com.cobblemon.mod.common.pokemon.IVs
+import com.cobblemon.mod.common.pokemon.Pokemon
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents
@@ -286,6 +289,35 @@ object BlanketCobbleSpawners : ModInitializer {
 		}
 	}
 
+	private fun applyCustomIVs(pokemon: Pokemon, ivSettings: IVSettings) {
+		if (ivSettings.allowCustomIvs) {
+			// Ensure IV settings are valid
+			if (!validateIVSettings(ivSettings)) {
+				logger.warn("Invalid IV settings for Pokémon '${pokemon.species.name}'. Skipping custom IV application.")
+				return
+			}
+
+			// Set each IV individually within the specified ranges
+			pokemon.setIV(Stats.HP, random.nextBetween(ivSettings.minIVHp, ivSettings.maxIVHp + 1))
+			pokemon.setIV(Stats.ATTACK, random.nextBetween(ivSettings.minIVAttack, ivSettings.maxIVAttack + 1))
+			pokemon.setIV(Stats.DEFENCE, random.nextBetween(ivSettings.minIVDefense, ivSettings.maxIVDefense + 1))
+			pokemon.setIV(Stats.SPECIAL_ATTACK, random.nextBetween(ivSettings.minIVSpecialAttack, ivSettings.maxIVSpecialAttack + 1))
+			pokemon.setIV(Stats.SPECIAL_DEFENCE, random.nextBetween(ivSettings.minIVSpecialDefense, ivSettings.maxIVSpecialDefense + 1))
+			pokemon.setIV(Stats.SPEED, random.nextBetween(ivSettings.minIVSpeed, ivSettings.maxIVSpeed + 1))
+
+			logDebug("Custom IVs applied to Pokémon '${pokemon.species.name}': ${pokemon.ivs}")
+		}
+	}
+
+	private fun validateIVSettings(ivSettings: IVSettings): Boolean {
+		return ivSettings.minIVHp <= ivSettings.maxIVHp &&
+				ivSettings.minIVAttack <= ivSettings.maxIVAttack &&
+				ivSettings.minIVDefense <= ivSettings.maxIVDefense &&
+				ivSettings.minIVSpecialAttack <= ivSettings.maxIVSpecialAttack &&
+				ivSettings.minIVSpecialDefense <= ivSettings.maxIVSpecialDefense &&
+				ivSettings.minIVSpeed <= ivSettings.maxIVSpeed
+	}
+
 
 	private fun spawnPokemon(serverWorld: ServerWorld, spawnerData: SpawnerData) {
 		if (SpawnerPokemonSelectionGui.isSpawnerGuiOpen(spawnerData.spawnerPos)) {
@@ -304,8 +336,10 @@ object BlanketCobbleSpawners : ModInitializer {
 			}
 		}
 
+		// ADDED
 		if (allValidPositions.isEmpty()) {
 			logDebug("No suitable spawn position found for spawner at ${spawnerData.spawnerPos}. Skipping spawn.")
+			ConfigManager.updateLastSpawnTick(spawnerData.spawnerPos, serverWorld.time) // ADDED
 			return
 		}
 
@@ -319,8 +353,10 @@ object BlanketCobbleSpawners : ModInitializer {
 			}
 		}
 
+		// ADDED
 		if (eligiblePokemon.isEmpty()) {
 			logDebug("No eligible Pokémon to spawn for spawner '${spawnerData.spawnerName}'.")
+			ConfigManager.updateLastSpawnTick(spawnerData.spawnerPos, serverWorld.time) // ADDED
 			return
 		}
 
@@ -362,7 +398,6 @@ object BlanketCobbleSpawners : ModInitializer {
 				continue
 			}
 
-			// Filter valid positions based on spawn location
 			val validPositions = filterSpawnPositionsByLocation(
 				serverWorld,
 				allValidPositions,
@@ -403,11 +438,19 @@ object BlanketCobbleSpawners : ModInitializer {
 				propertiesStringBuilder.append(" shiny=true")
 			}
 
-			if (!entry.formName.isNullOrEmpty() && !entry.formName.equals("normal", ignoreCase = true) && !entry.formName.equals("default", ignoreCase = true)) {
-				val normalizedEntryFormName = entry.formName!!.lowercase().replace(Regex("[^a-z0-9]"), "")
+			if (
+				!entry.formName.isNullOrEmpty() &&
+				!entry.formName.equals("normal", ignoreCase = true) &&
+				!entry.formName.equals("default", ignoreCase = true)
+			) {
+				val normalizedEntryFormName = entry.formName!!
+					.lowercase()
+					.replace(Regex("[^a-z0-9]"), "")
 				val availableForms = species.forms
 				val matchedForm = availableForms.find { form ->
-					val normalizedFormId = form.formOnlyShowdownId().lowercase().replace(Regex("[^a-z0-9]"), "")
+					val normalizedFormId = form.formOnlyShowdownId()
+						.lowercase()
+						.replace(Regex("[^a-z0-9]"), "")
 					normalizedFormId == normalizedEntryFormName
 				} ?: run {
 					logger.warn("Form '${entry.formName}' not found for species '${species.name}'. Defaulting to normal form.")
@@ -427,6 +470,16 @@ object BlanketCobbleSpawners : ModInitializer {
 			val properties = com.cobblemon.mod.common.api.pokemon.PokemonProperties.parse(propertiesStringBuilder.toString())
 			val pokemonEntity = properties.createEntity(serverWorld)
 			val pokemon = pokemonEntity.pokemon
+
+			// Apply custom IVs if allowed
+			applyCustomIVs(pokemon, selectedPokemon.ivSettings)
+
+			// Apply custom size if enabled in spawn settings
+			if (entry.sizeSettings.allowCustomSize) {
+				val randomSize = random.nextFloat() * (entry.sizeSettings.maxSize - entry.sizeSettings.minSize) +
+						entry.sizeSettings.minSize
+				pokemon.scaleModifier = randomSize
+			}
 
 			pokemonEntity.refreshPositionAndAngles(
 				spawnPos.x + 0.5,
@@ -452,6 +505,7 @@ object BlanketCobbleSpawners : ModInitializer {
 			logDebug("No Pokémon were spawned for spawner at ${spawnerData.spawnerPos}")
 		}
 	}
+
 
 	private fun checkBasicSpawnConditions(world: ServerWorld, entry: PokemonSpawnEntry): String? {
 		// Time check
@@ -517,10 +571,16 @@ object BlanketCobbleSpawners : ModInitializer {
 	private fun filterSpawnPositionsByLocation(world: ServerWorld, positions: List<BlockPos>, spawnLocation: String): List<BlockPos> {
 		return when (spawnLocation.uppercase()) {
 			"SURFACE" -> positions.filter { hasDirectSkyAccess(world, it) }
-			"UNDERGROUND" -> positions.filter { !hasDirectSkyAccess(world, it) }
+			"UNDERGROUND" -> positions.filter { !hasDirectSkyAccess(world, it) && !isUnderWater(world, it) }
+			"WATER" -> positions.filter { isUnderWater(world, it) }
 			else -> positions // "ALL" case - no filtering needed
 		}
 	}
+	private fun isUnderWater(world: ServerWorld, pos: BlockPos): Boolean {
+		val blockState = world.getBlockState(pos)
+		return blockState.block == Blocks.WATER
+	}
+
 	private fun hasDirectSkyAccess(world: ServerWorld, pos: BlockPos): Boolean {
 		var currentPos = pos.up()
 		while (currentPos.y < world.topY) {

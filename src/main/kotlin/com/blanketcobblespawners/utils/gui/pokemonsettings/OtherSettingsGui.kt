@@ -130,6 +130,7 @@ object OtherSettingsGui {
         val displayName = when (spawnLocation) {
             "SURFACE" -> "Spawn Location: SURFACE"
             "UNDERGROUND" -> "Spawn Location: UNDERGROUND"
+            "WATER" -> "Spawn Location: WATER"
             else -> "Spawn Location: ALL"
         }
 

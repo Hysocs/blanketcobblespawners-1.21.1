@@ -57,13 +57,38 @@ class CatchingTracker {
             }
 
             if (pokemonSpawnEntry != null) {
+                val captureSettings = pokemonSpawnEntry.captureSettings
+
+                // If isCatchable is false, deny capture
+                if (!captureSettings.isCatchable) {
+                    event.captureResult = CaptureContext(
+                        numberOfShakes = 0,
+                        isSuccessfulCapture = false,
+                        isCriticalCapture = false
+                    )
+                    logDebug("Capture attempt failed: ${pokemonEntity.pokemon.species.name} is not catchable.")
+
+                    thrower?.sendMessage(
+                        Text.literal("This Pokémon cannot be captured!")
+                            .formatted(Formatting.RED),
+                        false
+                    )
+                    logDebug("Sent message to player: This Pokémon cannot be captured!")
+
+                    // Track this player’s pokeball for potential removal in the tick event
+                    thrower?.let {
+                        playerTrackingMap[it] = PokeballTrackingInfo(pokeBallEntity.uuid, pokeBallEntity)
+                    }
+                    return // Exit early since this Pokémon cannot be caught
+                }
+
                 val usedPokeBall = pokeBallEntity.pokeBall
                 val usedPokeBallName = usedPokeBall.name.toString()
-                val allowedPokeBalls = prepareAllowedPokeBallList(pokemonSpawnEntry.captureSettings.requiredPokeBalls)
+                val allowedPokeBalls = prepareAllowedPokeBallList(captureSettings.requiredPokeBalls)
 
                 logDebug("Used Pokéball: $usedPokeBallName, Allowed Pokéballs: $allowedPokeBalls")
 
-                if (pokemonSpawnEntry.captureSettings.restrictCaptureToLimitedBalls) {
+                if (captureSettings.restrictCaptureToLimitedBalls) {
                     if (!allowedPokeBalls.contains("ALL") && !isValidPokeBall(allowedPokeBalls, usedPokeBallName)) {
                         event.captureResult = CaptureContext(
                             numberOfShakes = 0,
@@ -96,6 +121,7 @@ class CatchingTracker {
             logDebug("Pokémon ${pokemonEntity.pokemon.species.name} is NOT from a spawner.")
         }
     }
+
 
     /**
      * Prepares the list of allowed Poké Balls by ensuring each name has the "cobblemon:" namespace.
